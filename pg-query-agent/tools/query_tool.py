@@ -46,3 +46,61 @@ class GuardrailValidator:
                 )
 
         return GuardrailResult(ok=True)
+
+
+import psycopg2
+from crewai.tools import BaseTool
+from pydantic import BaseModel, Field
+from typing import Type
+
+
+class QueryToolInput(BaseModel):
+    sql: str = Field(description="The SQL SELECT query to execute")
+
+
+class PostgresReadOnlyQueryTool(BaseTool):
+    name: str = "PostgreSQL Read-Only Query Tool"
+    description: str = (
+        "Executes a validated SQL SELECT query against PostgreSQL in a read-only "
+        "transaction. Returns formatted results. Blocks any non-SELECT SQL."
+    )
+    args_schema: Type[BaseModel] = QueryToolInput
+    connection_string: str
+
+    def _run(self, sql: str) -> str:
+        check = GuardrailValidator().validate(sql)
+        if not check.ok:
+            return f"Query blocked — {check.message}"
+
+        try:
+            conn = psycopg2.connect(self.connection_string)
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("BEGIN TRANSACTION READ ONLY")
+                    try:
+                        cur.execute(sql)
+                        rows = cur.fetchall()
+                        columns = (
+                            [desc.name for desc in cur.description]
+                            if cur.description
+                            else []
+                        )
+                        return self._format_results(columns, rows)
+                    finally:
+                        try:
+                            cur.execute("ROLLBACK")
+                        except Exception:
+                            pass
+            finally:
+                conn.close()
+        except psycopg2.Error as exc:
+            return f"Database error: {exc}"
+
+    def _format_results(self, columns: list[str], rows: list[tuple]) -> str:
+        if not rows:
+            return "No results found."
+        header = " | ".join(columns)
+        separator = "-" * len(header)
+        row_lines = [" | ".join(str(v) for v in row) for row in rows]
+        count_line = f"\n{len(rows)} row(s) returned."
+        return "\n".join([header, separator, *row_lines]) + count_line
