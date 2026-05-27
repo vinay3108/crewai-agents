@@ -72,7 +72,9 @@ class TestMain:
                   "DATABASE_USER", "DATABASE_PASSWORD", "GEMINI_API_KEY"]:
             monkeypatch.delenv(k, raising=False)
 
-        with pytest.raises(SystemExit) as exc_info:
+        # Patch load_dotenv so reload() doesn't re-read the .env file and
+        # override the env vars we just cleared.
+        with patch("dotenv.load_dotenv"), pytest.raises(SystemExit) as exc_info:
             import importlib
             import main as m
             importlib.reload(m)
