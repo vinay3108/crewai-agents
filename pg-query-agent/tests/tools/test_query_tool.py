@@ -83,3 +83,32 @@ class TestPostgresReadOnlyQueryTool:
         mock_connect.side_effect = psycopg2.OperationalError("could not connect")
         result = self._tool()._run(sql="SELECT * FROM orders")
         assert "error" in result.lower()
+
+    @patch("tools.query_tool.psycopg2.connect")
+    def test_rollback_called_even_on_query_error(self, mock_connect):
+        """ROLLBACK must run even when the query itself raises an error."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connect.return_value = mock_conn
+        mock_conn.cursor.return_value.__enter__ = lambda s: mock_cursor
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        mock_cursor.execute.side_effect = [
+            None,  # BEGIN succeeds
+            psycopg2.ProgrammingError("column not found"),  # query fails
+            None,  # ROLLBACK (best-effort, in finally)
+        ]
+        result = self._tool()._run(sql="SELECT nonexistent FROM orders")
+        calls = [str(c) for c in mock_cursor.execute.call_args_list]
+        assert any("ROLLBACK" in c for c in calls)
+        assert "error" in result.lower()
+
+    @patch("tools.query_tool.psycopg2.connect")
+    def test_connection_always_closed(self, mock_connect):
+        """conn.close() must be called even when query succeeds."""
+        mock_conn, mock_cursor = _setup_mock_conn(
+            mock_connect,
+            description=[ColInfo("id")],
+            rows=[(1,)],
+        )
+        self._tool()._run(sql="SELECT id FROM orders")
+        mock_conn.close.assert_called_once()

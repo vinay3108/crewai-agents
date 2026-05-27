@@ -92,7 +92,10 @@ class PostgresReadOnlyQueryTool(BaseTool):
                         except Exception:
                             pass
             finally:
-                conn.close()
+                try:
+                    conn.close()
+                except Exception:
+                    pass  # Best-effort close; ROLLBACK already executed
         except psycopg2.Error as exc:
             return f"Database error: {exc}"
 
