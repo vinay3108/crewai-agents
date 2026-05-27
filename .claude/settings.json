@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(uv add *)",
+      "Bash(python -m pytest tests/tools/test_query_tool.py -v --tb=short)",
+      "Bash(cat)",
+      "Bash(python /tmp/verify.py)",
+      "Bash(python /tmp/test_verify.py)",
+      "Bash(cat > *)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
+    ]
+  }
+}
