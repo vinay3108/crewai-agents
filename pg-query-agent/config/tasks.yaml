@@ -1,0 +1,29 @@
+build_query_task:
+  description: >
+    Given the natural language command: {nl_query}
+    And the table schema:
+    {schema}
+    For table: {table_name}
+
+    Build a valid PostgreSQL SELECT query that answers the command.
+    Use only column names that exist in the schema.
+    Always add LIMIT 50 by default unless the user explicitly requests more rows or a specific count.
+    Do not include any explanation — output ONLY the SQL query.
+    Do not wrap the SQL in markdown code blocks or backticks.
+  expected_output: >
+    A single valid PostgreSQL SELECT query string. No markdown. No explanation. No code blocks.
+  agent: query_builder
+
+execute_query_task:
+  description: >
+    Execute the SQL query produced by the query builder.
+    Use the PostgresReadOnlyQueryTool to run it.
+    Return the results clearly.
+  expected_output: >
+    Query results as a formatted table with column headers and row values.
+    Always show row count at the bottom (e.g. "Showing 50 rows. Ask for more if needed.").
+    If no rows returned, say "No results found."
+    If query fails guardrail check, explain why it was blocked.
+  agent: query_executor
+  context:
+    - build_query_task
