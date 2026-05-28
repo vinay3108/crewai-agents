@@ -51,11 +51,12 @@ class TestMain:
         from main import run
         run()  # must not raise
 
+    @patch("main.list_tables", return_value=["order_items", "order_history"])
     @patch("main.QueryCrew")
     @patch("main.PostgresSchemaInspectorTool")
-    @patch("builtins.input", side_effect=["nonexistent_table"])
-    def test_schema_not_found_exits(
-        self, mock_input, mock_schema_cls, mock_crew_cls, monkeypatch
+    @patch("builtins.input", side_effect=["nonexistent_table", KeyboardInterrupt])
+    def test_schema_not_found_repropts_with_matches(
+        self, mock_input, mock_schema_cls, mock_crew_cls, mock_list_tables, monkeypatch
     ):
         _set_env(monkeypatch)
         mock_tool = MagicMock()
@@ -66,6 +67,42 @@ class TestMain:
         with pytest.raises(SystemExit):
             from main import run
             run()
+
+        mock_list_tables.assert_called_once()
+
+    @patch("main.QueryCrew")
+    @patch("main.PostgresSchemaInspectorTool")
+    @patch("builtins.input", side_effect=["nonexistent_table", KeyboardInterrupt])
+    def test_schema_not_found_no_matches_repropts(
+        self, mock_input, mock_schema_cls, mock_crew_cls, monkeypatch
+    ):
+        _set_env(monkeypatch)
+        mock_tool = MagicMock()
+        mock_schema_cls.return_value = mock_tool
+        mock_tool._run.return_value = "Table 'nonexistent_table' not found or has no columns."
+        mock_crew_cls.return_value = MagicMock()
+
+        with patch("main.list_tables", return_value=[]), pytest.raises(SystemExit):
+            from main import run
+            run()
+
+    @patch("main.list_tables", return_value=["orders", "order_items"])
+    @patch("main.QueryCrew")
+    @patch("main.PostgresSchemaInspectorTool")
+    @patch("builtins.input", side_effect=["list", "orders", "exit"])
+    def test_list_tables_command_shows_all_tables(
+        self, mock_input, mock_schema_cls, mock_crew_cls, mock_list_tables, monkeypatch
+    ):
+        _set_env(monkeypatch)
+        mock_tool = MagicMock()
+        mock_schema_cls.return_value = mock_tool
+        mock_tool._run.return_value = "Table: orders\nColumns:\n  - id integer"
+        mock_crew_cls.return_value = MagicMock()
+
+        from main import run
+        run()
+
+        mock_list_tables.assert_called()
 
     def test_missing_env_var_exits_with_code_1(self, monkeypatch):
         for k in ["DATABASE_HOST", "DATABASE_PORT", "DATABASE_NAME",

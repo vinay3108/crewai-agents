@@ -99,3 +99,36 @@ class PostgresSchemaInspectorTool(BaseTool):
                 lines.append(f"  - {con_name}: {con_type}")
 
         return "\n".join(lines)
+
+
+def list_tables(connection_string: str, pattern: str | None = None) -> list[str]:
+    """Return public-schema table names, optionally filtered by ILIKE pattern."""
+    try:
+        conn = psycopg2.connect(connection_string)
+        try:
+            with conn.cursor() as cur:
+                if pattern:
+                    cur.execute(
+                        """
+                        SELECT table_name FROM information_schema.tables
+                        WHERE table_schema = 'public' AND table_name ILIKE %s
+                        ORDER BY table_name
+                        """,
+                        (f"%{pattern}%",),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT table_name FROM information_schema.tables
+                        WHERE table_schema = 'public'
+                        ORDER BY table_name
+                        """
+                    )
+                return [row[0] for row in cur.fetchall()]
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except psycopg2.Error:
+        return []

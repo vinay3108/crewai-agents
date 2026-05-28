@@ -14,7 +14,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from tools import build_connection_string
-from tools.schema_tool import PostgresSchemaInspectorTool
+from tools.schema_tool import PostgresSchemaInspectorTool, list_tables
 from crew import QueryCrew
 
 console = Console()
@@ -58,8 +58,55 @@ def _validate_env() -> None:
         sys.exit(1)
 
 
+_LIST_COMMANDS = {"list", "tables", "list tables", "show tables", r"\dt", "ls"}
+
+
 def _banner() -> None:
     console.print(Panel.fit("[bold cyan]pg-query-agent  v1.0[/bold cyan]", border_style="cyan"))
+
+
+def _pick_table(conn_str: str, schema_tool: PostgresSchemaInspectorTool) -> tuple[str, str]:
+    """Loop until user picks a valid table. Handles 'list' and partial-match hints."""
+    while True:
+        try:
+            raw = input("Enter table name (or 'list' to show all): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[dim]Bye![/dim]")
+            sys.exit(0)
+
+        if not raw:
+            continue
+
+        if raw.lower() in _LIST_COMMANDS:
+            tables = list_tables(conn_str)
+            if tables:
+                console.print("\n[bold]Tables in database:[/bold]")
+                for t in tables:
+                    console.print(f"  • {t}")
+                console.print()
+            else:
+                console.print("[yellow]No tables found in public schema.[/yellow]\n")
+            continue
+
+        console.print(f"\n[dim]Fetching schema for table: {raw}...[/dim]")
+        schema = schema_tool._run(table_name=raw)
+
+        if schema.startswith("❌"):
+            console.print(f"[red]{schema}[/red]")
+            sys.exit(1)
+
+        if "not found" in schema.lower():
+            matches = list_tables(conn_str, pattern=raw)
+            if matches:
+                console.print(f"[yellow]Table '{raw}' not found. Similar tables:[/yellow]")
+                for t in matches:
+                    console.print(f"  • {t}")
+                console.print()
+            else:
+                console.print(f"[red]Table '{raw}' not found and no similar names exist.[/red]\n")
+            continue
+
+        return raw, schema
 
 
 def run() -> None:
@@ -71,14 +118,7 @@ def run() -> None:
     crew = QueryCrew(connection_string=conn_str)
     limiter = _RateLimiter(rpm=_rpm())
 
-    table_name = input("Enter table name: ").strip()
-
-    console.print(f"\n[dim]Fetching schema for table: {table_name}...[/dim]")
-    schema = schema_tool._run(table_name=table_name)
-
-    if "not found" in schema.lower() or schema.startswith("❌"):
-        console.print(f"[red]{schema}[/red]")
-        sys.exit(1)
+    table_name, schema = _pick_table(conn_str, schema_tool)
 
     console.print(f"\n[bold]Schema:[/bold]\n{schema}\n")
 
